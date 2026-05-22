@@ -77,16 +77,13 @@ def _maybe_compile(swift_path: Path, binary_path: Path) -> None:
 
 
 def _resolve_helper_path() -> Path | None:
-    """Find or build the mac-ax-helper binary.
+    """Find the AX tree helper binary (macOS or Linux).
 
     Search order:
       1. OPENCHRONICLE_AX_HELPER env var (absolute path)
       2. Packaged resource shipped with the wheel (_bundled/)
       3. Dev source tree (../../../resources/ relative to this file)
     """
-    if platform.system() != "Darwin":
-        return None
-
     override = os.environ.get("OPENCHRONICLE_AX_HELPER")
     if override:
         p = Path(override).expanduser().resolve()
@@ -96,25 +93,38 @@ def _resolve_helper_path() -> Path | None:
 
     candidates: list[Path] = []
 
-    # 1. Bundled inside the installed package (wheel ships .swift; binary built on demand)
+    # 1. Bundled inside the installed package (wheel ships .swift/.py; binary built on demand)
     try:
         from importlib.resources import files as _pkg_files
 
         bundled_dir = Path(str(_pkg_files("openchronicle").joinpath("_bundled")))
         candidates.append(bundled_dir / "mac-ax-helper")
+        candidates.append(bundled_dir / "linux-ax-helper")
     except (ModuleNotFoundError, ValueError):
         pass
 
     # 2. Dev source tree
     dev_root = Path(__file__).resolve().parents[3]  # .../OpenChronicle/
     candidates.append(dev_root / "resources" / "mac-ax-helper")
+    candidates.append(dev_root / "resources" / "linux-ax-helper")
 
     for binary_path in candidates:
         swift_path = binary_path.with_suffix(".swift")
+        py_path = binary_path.with_suffix(".py")
         if swift_path.is_file():
             _maybe_compile(swift_path, binary_path)
+        elif py_path.is_file():
+            if os.access(py_path, os.X_OK):
+                return py_path
+            elif os.access(py_path, os.R_OK):
+                os.chmod(py_path, py_path.stat().st_mode | 0o111)
+                if os.access(py_path, os.X_OK):
+                    return py_path
         if binary_path.is_file() and os.access(binary_path, os.X_OK):
             return binary_path
+
+    if platform.system() != "Darwin" and platform.system() != "Linux":
+        return None
 
     return None
 
@@ -237,13 +247,85 @@ class MacAXHelperProvider:
         )
 
 
-def create_provider(*, depth: int = 8, timeout: int = 3, raw: bool = False) -> AXProvider:
-    if platform.system() != "Darwin":
-        return UnavailableAXProvider(f"unsupported platform: {platform.system()}")
-    helper = _resolve_helper_path()
-    if helper is None:
-        return UnavailableAXProvider(
-            "mac-ax-helper not found. Build it: bash resources/build-mac-ax-helper.sh"
+class LinuxAXHelperProvider:
+    """Subprocess wrapper around linux-ax-helper.py (Python AT-SPI)."""
+
+    def __init__(self, *, helper_path: Path, depth: int, timeout: int, raw: bool = False) -> None:
+        self._helper_path = str(helper_path)
+        self._depth = depth
+        self._timeout = timeout
+        self._raw = raw
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def capture_frontmost(self, *, focused_window_only: bool = True) -> AXCaptureResult | None:
+        return self._run()
+
+    def capture_all_visible(self) -> AXCaptureResult | None:
+        return self._run()
+
+    def capture_app(
+        self, app_name: str, *, focused_window_only: bool = True
+    ) -> AXCaptureResult | None:
+        return self._run()
+
+    def _run(self) -> AXCaptureResult | None:
+        args: list[str] = ["/usr/bin/python3", self._helper_path, str(self._depth)]
+        try:
+            proc = subprocess.run(
+                args, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("linux-ax-helper timed out after %ds", _SUBPROCESS_TIMEOUT)
+            return None
+        except OSError as exc:
+            logger.error("Failed to run linux-ax-helper: %s", exc)
+            return None
+
+        if proc.returncode != 0:
+            logger.warning(
+                "linux-ax-helper exited %d: %s", proc.returncode, proc.stderr.strip()[:200]
+            )
+            return None
+
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            logger.warning("Failed to parse linux-ax-helper JSON: %s", exc)
+            return None
+
+        if "error" in data:
+            logger.warning("linux-ax-helper error: %s", data["error"])
+            return None
+
+        data = _strip_frame_fields(data)
+        return AXCaptureResult(
+            raw_json=data,
+            timestamp=data.get("timestamp", ""),
+            apps=data.get("apps", []),
+            metadata={"mode": "tree-dump", "depth": self._depth, "platform": "linux", "raw": self._raw},
         )
-    logger.info("AX capture initialized: %s", helper)
-    return MacAXHelperProvider(helper_path=helper, depth=depth, timeout=timeout, raw=raw)
+
+
+def create_provider(*, depth: int = 8, timeout: int = 3, raw: bool = False) -> AXProvider:
+    system = platform.system()
+    if system == "Darwin":
+        helper = _resolve_helper_path()
+        if helper is None:
+            return UnavailableAXProvider(
+                "mac-ax-helper not found. Build it: bash resources/build-mac-ax-helper.sh"
+            )
+        logger.info("AX capture initialized (macOS): %s", helper)
+        return MacAXHelperProvider(helper_path=helper, depth=depth, timeout=timeout, raw=raw)
+    elif system == "Linux":
+        helper = _resolve_helper_path()
+        if helper is None:
+            return UnavailableAXProvider(
+                "linux-ax-helper not found. Place linux-ax-helper.py in resources/"
+            )
+        logger.info("AX capture initialized (Linux): %s", helper)
+        return LinuxAXHelperProvider(helper_path=helper, depth=depth, timeout=timeout, raw=raw)
+    else:
+        return UnavailableAXProvider(f"unsupported platform: {system}")

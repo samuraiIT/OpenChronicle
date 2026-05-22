@@ -36,6 +36,12 @@ _IMMEDIATE_EVENTS = {
     "AXApplicationActivated",
     "UserMouseClick",
     "UserTextInput",
+    # Server-mode events
+    "git_commit",
+    "deployment",
+    "agent_activity",
+    "file_change",
+    "system_metric",
 }
 _DEBOUNCED_EVENTS = {"AXValueChanged"}
 _SKIP_EVENTS = {"AXTitleChanged"}
@@ -99,8 +105,12 @@ class EventDispatcher:
 
         trigger = {
             "event_type": event_type,
+            "app_name": raw.get("app_name", bundle_id),
             "bundle_id": bundle_id,
             "window_title": window_title,
+            "text": raw.get("text", ""),
+            "commit_hash": raw.get("commit_hash", ""),
+            "author": raw.get("author", ""),
         }
 
         if event_type in _IMMEDIATE_EVENTS:

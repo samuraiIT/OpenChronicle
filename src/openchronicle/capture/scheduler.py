@@ -53,6 +53,11 @@ def _build_capture(
     }
 
     meta = window_meta.active_window()
+    # Fallback: use trigger/watcher event data on headless servers
+    if trigger and (not meta.app_name or meta.app_name == ""):
+        meta.app_name = trigger.get("app_name", "") or trigger.get("window_title", "") or ""
+        meta.title = trigger.get("window_title", "") or trigger.get("text", "") or ""
+        meta.bundle_id = trigger.get("bundle_id", "") or ""
     out["window_meta"] = {
         "app_name": meta.app_name,
         "title": meta.title,
