@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="README.ru.md">Русский</a>
+</p>
+
+<p align="center">
   Think OpenAI Chronicle - but open, model-agnostic, inspectable, and hackable.
 </p>
 
@@ -33,11 +37,14 @@
   </a>
 </p>
 
-> **Status:** v0.1.0 · macOS only · early alpha
+> **Status:** v0.1.0 · macOS + Linux · early alpha
+>
+> **Fork** (`linux-server-port`): adds Linux AT-SPI support, headless server mode,
+> dual-layer hybrid memory, and unified MCP search. [See what's new →](README.ru.md)
 
 OpenChronicle gives AI agents a local, inspectable memory built from real screen and app context.
 
-It runs on your Mac, captures structured context from what you're doing, and turns it into persistent Markdown memory: what you're working on, what you've decided, which tools you use, and which people or projects matter.
+It runs on your **Mac or Linux machine**, captures structured context from what you're doing, and turns it into persistent Markdown memory: what you're working on, what you've decided, which tools you use, and which people or projects matter.
 
 Any agent that can call tools can use it. MCP clients work especially well today, but OpenChronicle is meant to be a general memory layer for tool-using agents - not something tied to one protocol, one model provider, or one app.
 
@@ -120,11 +127,14 @@ The core idea is simple:
 
 ## What you get
 
-* **Event-driven capture** from macOS AX events
+* **Event-driven capture** from macOS AX events or Linux AT-SPI events
+* **Headless server mode** — git, agent sessions, deployments, system metrics
 * **Session-aware memory writing** instead of noisy per-snapshot logs
+* **Dual-layer hybrid memory** — durable (agent-written) + ambient (auto-classified)
 * **Human-readable Markdown memory**
-* **Local SQLite indexing**
+* **Local SQLite FTS5 indexing** with BM25 ranking
 * **Structured memory files** like user-, project-, tool-, topic-, person-, org-, and daily event-
+* **Unified MCP server** — search across both memory layers
 * **Supersede-not-delete history**
 * **Local or cloud model support**
 * **Always-on agent-readable interface**, with MCP as the best-supported path today
@@ -133,13 +143,37 @@ The core idea is simple:
 
 ## Install
 
+### macOS
+
 Requires **macOS 13+** and **Xcode Command Line Tools** (`xcode-select --install`).
+
+### Linux
+
+Requires **Ubuntu 24.04+** (or any distro with AT-SPI2):
+
+```bash
+sudo apt install at-spi2-core python3-pyatspi
+```
+
+### Both platforms
 
 ```bash
 git clone https://github.com/Einsia/OpenChronicle.git
+# Or the linux-server-port fork:
+# git clone https://github.com/samuraiIT/OpenChronicle.git -b linux-server-port
 cd openchronicle
 bash install.sh
 ```
+
+### Server mode (headless Linux)
+
+```bash
+OC_WATCH_DIR=/path/to/workspace \
+  OPENCHRONICLE_AX_WATCHER=./resources/server-events-watcher.py \
+  openchronicle start
+```
+
+See [docs/server-mode.md](docs/server-mode.md) for details.
 
 ---
 
@@ -222,6 +256,15 @@ Documentation
 * [docs/mcp.md](docs/mcp.md) - current tool surface and integrations
 * [docs/memory-format.md](docs/memory-format.md) - file layout and supersede semantics
 * [docs/troubleshooting.md](docs/troubleshooting.md) - common issues
+
+### Linux server-port docs
+
+* [docs/linux-port.md](docs/linux-port.md) — Linux AT-SPI port
+* [docs/server-mode.md](docs/server-mode.md) — Headless server event capture
+* [docs/hybrid-memory.md](docs/hybrid-memory.md) — Dual-layer memory (Durable + Ambient)
+* [docs/hermetic-mcp.md](docs/hermetic-mcp.md) — Unified MCP search server
+* [docs/sse-fix.md](docs/sse-fix.md) — OmniRoute SSE + JSON fence fix
+* [README.ru.md](README.ru.md) — Полный обзор на русском
 
 ---
 
